@@ -1,5 +1,4 @@
 <!DOCTYPE html>
-
 <html lang="it">
 <head>
     <meta charset="UTF-8">
@@ -198,18 +197,47 @@
 
         async function startCamera(mode) {
             try {
-                stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
-                document.getElementById('video').srcObject = stream;
-                document.getElementById('camera').classList.remove('hidden');
-                document.getElementById('content').classList.add('hidden');
+                console.log('🎬 Avviando camera modalità:', mode);
                 
-                if (mode === 'learn') {
-                    startLearning();
-                } else {
-                    startRecognition();
-                }
-            } catch (e) {
-                alert('Errore fotocamera: ' + e.message);
+                // Simple working camera request (like debug version)
+                stream = await navigator.mediaDevices.getUserMedia({
+                    video: {
+                        facingMode: 'environment',
+                        width: { ideal: 640 },
+                        height: { ideal: 480 }
+                    },
+                    audio: false
+                });
+                
+                console.log('✅ Stream ottenuto:', stream);
+                
+                const video = document.getElementById('video');
+                video.srcObject = stream;
+                
+                // Wait for video to load before showing UI
+                video.onloadedmetadata = () => {
+                    console.log('📹 Video metadata caricato:', video.videoWidth, 'x', video.videoHeight);
+                    
+                    // Show camera UI
+                    document.getElementById('camera').classList.remove('hidden');
+                    document.getElementById('content').classList.add('hidden');
+                    
+                    // Start the appropriate mode
+                    if (mode === 'learn') {
+                        startLearning();
+                    } else {
+                        startRecognition();
+                    }
+                };
+                
+                video.onerror = (e) => {
+                    console.error('❌ Errore video:', e);
+                    alert('Errore nel caricamento video');
+                };
+                
+            } catch (error) {
+                console.error('❌ Errore camera:', error);
+                alert(`Errore fotocamera: ${error.name}\n${error.message}\n\nSe il problema persiste, ricarica la pagina.`);
             }
         }
 

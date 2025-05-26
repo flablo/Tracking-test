@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Physical Object Linker</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f5; }
+        .app { max-width: 400px; margin: 0 auto; background: white; min-height: 100vh; }
+        .header { background: linear-gradient(135deg, #3b82f6, #1d4ed8); color: white; padding: 20px; text-align: center; }
+        .header h1 { font-size: 24px; margin-bottom: 4px; }
+        .header p { opacity: 0.9; font-size: 14px; }
+        .camera { position: relative; background: black; display: none; }
+        .camera video { width: 100%; height: 300px; object-fit: cover; }
+        .overlay { position: absolute; top: 0; left: 0; right: 0; bottom: 0; display: flex; align-items: center; justify-content: center; }
+        .frame { border: 2px dashed white; width: 200px; height: 120px; border-radius: 8px; display: flex; align-items: center; justify-content: center; }
+        .result { position: absolute; bottom: 16px; left: 16px; right: 16px; padding: 16px; border-radius: 8px; color: white; display: flex; justify-content: space-between; align-items: center; }
+        .success { background: #10b981; }
+        .warning { background: #f59e0b; }
+        .info { background: #6b7280; }
+        .learning { background: #8b5cf6; }
+        .close { position: absolute; top: 16px; right: 16px; background: #ef4444; color: white; border: none; border-radius: 50%; width: 40px; height: 40px; cursor: pointer; }
+        .content { padding: 20px; }
+        .alert { background: #dbeafe; border: 1px solid #93c5fd; border-radius: 8px; padding: 16px; margin-bottom: 16px; }
+        .btn { width: 100%; padding: 16px; border: none; border-radius: 8px; font-size: 16px; cursor: pointer; margin-bottom: 12px; display: flex; align-items: center; justify-content: center; gap: 8px; }
+        .btn-blue { background: #3b82f6; color: white; }
+        .btn-purple { background: #8b5cf6; color: white; }
+        .btn-green { background: #10b981; color: white; }
+        .btn-gray { background: #f3f4f6; color: #374151; }
+        .btn:disabled { background: #d1d5db; color: #9ca3af; cursor: not-allowed; }
+        .item { background: #f9fafb; border-radius: 8px; padding: 16px; margin-bottom: 8px; cursor: pointer; display: flex; justify-content: space-between; }
+        .item:hover { background: #f3f4f6; }
+        .modal { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); display: none; align-items: center; justify-content: center; z-index: 1000; }
+        .modal.show { display: flex; }
+        .modal-content { background: white; border-radius: 12px; padding: 24px; margin: 16px; max-width: 320px; width: 100%; }
+        .share-btn { width: 100%; display: flex; align-items: center; gap: 12px; padding: 12px; border: 1px solid #e5e7eb; border-radius: 8px; background: white; cursor: pointer; margin-bottom: 8px; }
+        .progress { width: 100%; background: rgba(255,255,255,0.3); border-radius: 4px; height: 8px; margin-top: 8px; }
+        .progress-fill { background: white; height: 8px; border-radius: 4px; transition: width 0.3s; }
+        .hidden { display: none; }
+        .empty { text-align: center; padding: 32px 0; color: #6b7280; }
+        .instructions { background: #fef3c7; border: 1px solid #fbbf24; border-radius: 8px; padding: 16px; margin-top: 32px; }
+        .spinner { border: 2px solid #f3f3f3; border-top: 2px solid #8b5cf6; border-radius: 50%; width: 20px; height: 20px; animation: spin 1s linear infinite; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    </style>
+</head>
+<body>
+    <div class="app">
+        <div class="header">
+            <h1>Physical Object Linker</h1>
+            <p>Automatic Object Learning</p>
+        </div>
+
+        <div class="camera hidden" id="camera">
+            <video id="video" autoplay playsinline></video>
+            <div class="overlay">
+                <div class="frame">
+                    <span id="icon">📷</span>
+                    <div id="spinner" class="spinner hidden"></div>
+                </div>
+            </div>
+            
+            <div id="learning" class="result learning hidden">
+                <div>
+                    <strong>Apprendimento oggetto...</strong>
+                    <div id="progress-text">Progresso: 0%</div>
+                    <div class="progress">
+                        <div id="progress-bar" class="progress-fill" style="width: 0%"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="recognition" class="result success hidden">
+                <div>
+                    <strong id="obj-name">Oggetto</strong>
+                    <div id="confidence">Confidenza: 0%</div>
+                </div>
+                <button onclick="confirm()" style="background: white; color: #10b981; border: none; border-radius: 50%; width: 40px; height: 40px;">✓</button>
+            </div>
+
+            <div id="warning" class="result warning hidden">
+                <div>Confidenza bassa. Migliora illuminazione.</div>
+            </div>
+
+            <div id="no-match" class="result info hidden">
+                <div>Nessun oggetto riconosciuto.</div>
+            </div>
+
+            <button class="close" onclick="stop()">✕</button>
+        </div>
+
+        <div class="content" id="content">
+            <div id="pending" class="alert hidden">
+                <strong>Contenuto in attesa</strong>
+                <div id="pending-title">Inquadra un oggetto per associare questo contenuto.</div>
+            </div>
+
+            <div id="detail" class="hidden">
+                <div style="background: #f9fafb; border-radius: 8px; padding: 16px; margin-bottom: 16px;">
+                    <h2 id="detail-name">Oggetto</h2>
+                    <div style="color: #6b7280; font-size: 14px;">
+                        <div>Contenuti: <span id="detail-count">0</span></div>
+                        <div>Creato: <span id="detail-created">-</span></div>
+                    </div>
+                </div>
+                <div id="detail-links"></div>
+                <button class="btn btn-gray" onclick="showMain()">Torna alla lista</button>
+            </div>
+
+            <div id="main">
+                <button class="btn btn-blue" id="scan-btn" onclick="scan()" disabled>📷 Riconosci Oggetto</button>
+                <button class="btn btn-purple" onclick="learn()">➕ Impara Nuovo Oggetto</button>
+                <button class="btn btn-green" onclick="share()">🔗 Simula Share Extension</button>
+
+                <div style="margin-top: 24px;">
+                    <h2>Oggetti Appresi (<span id="count">0</span>)</h2>
+                    <div id="list">
+                        <div class="empty">
+                            <p>Nessun oggetto appreso.</p>
+                            <p style="font-size: 14px;">Inizia con "Impara Nuovo Oggetto".</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="instructions">
+                    <h3 style="color: #92400e; margin-bottom: 8px;">Come funziona:</h3>
+                    <ol style="color: #a16207; font-size: 14px; padding-left: 16px;">
+                        <li>Impara oggetti colorati inquadrandoli</li>
+                        <li>Sistema analizza automaticamente le caratteristiche</li>
+                        <li>Riconosci oggetti per accedere ai contenuti</li>
+                        <li>Associa contenuti tramite Share Extension</li>
+                    </ol>
+                </div>
+            </div>
+        </div>
+
+        <div class="modal" id="modal">
+            <div class="modal-content">
+                <h3 style="margin-bottom: 16px;">Simula Share Extension</h3>
+                <p style="color: #6b7280; margin-bottom: 16px; font-size: 14px;">Scegli il tipo di contenuto:</p>
+                
+                <button class="share-btn" onclick="addContent('image')">📷 Foto / Immagine</button>
+                <button class="share-btn" onclick="addContent('document')">📄 Documento PDF</button>
+                <button class="share-btn" onclick="addContent('link')">🔗 Link Web</button>
+                <button class="share-btn" onclick="addContent('video')">🎥 Video</button>
+
+                <button class="btn btn-gray" onclick="hideModal()">Annulla</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let objects = [];
+        let pending = null;
+        let current = null;
+        let stream = null;
+        let learning = false;
+        let data = [];
+        let progress = 0;
+        let interval = null;
+
+        function updateUI() {
+            document.getElementById('count').textContent = objects.length;
+            document.getElementById('scan-btn').disabled = objects.length === 0;
+            document.getElementById('scan-btn').textContent = pending ? '📷 Associa Contenuto' : '📷 Riconosci Oggetto';
+            
+            if (pending) {
+                document.getElementById('pending').classList.remove('hidden');
+                document.getElementById('pending-title').textContent = pending.title;
+            } else {
+                document.getElementById('pending').classList.add('hidden');
+            }
+
+            const list = document.getElementById('list');
+            if (objects.length === 0) {
+                list.innerHTML = '<div class="empty"><p>Nessun oggetto appreso.</p><p style="font-size: 14px;">Inizia con "Impara Nuovo Oggetto".</p></div>';
+            } else {
+                list.innerHTML = objects.map(obj => 
+                    `<div class="item" onclick="showDetail('${obj.id}')">
+                        <div>
+                            <div style="font-weight: 500;">${obj.name}</div>
+                            <div style="color: #6b7280; font-size: 14px;">${obj.links.length} contenuti</div>
+                        </div>
+                        <div>→</div>
+                    </div>`
+                ).join('');
+            }
+        }
+
+        async function startCamera(mode) {
+            try {
+                stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+                document.getElementById('video').srcObject = stream;
+                document.getElementById('camera').classList.remove('hidden');
+                document.getElementById('content').classList.add('hidden');
+                
+                if (mode === 'learn') {
+                    startLearning();
+                } else {
+                    startRecognition();
+                }
+            } catch (e) {
+                alert('Errore fotocamera: ' + e.message);
+            }
+        }
+
+        function stop() {
+            if (stream) {
+                stream.getTracks().forEach(t => t.stop());
+                stream = null;
+            }
+            if (interval) {
+                clearInterval(interval);
+                interval = null;
+            }
+            
+            document.getElementById('camera').classList.add('hidden');
+            document.getElementById('content').classList.remove('hidden');
+            
+            learning = false;
+            data = [];
+            progress = 0;
+            hideOverlays();
+            updateUI();
+        }
+
+        function hideOverlays() {
+            document.getElementById('learning').classList.add('hidden');
+            document.getElementById('recognition').classList.add('hidden');
+            document.getElementById('warning').classList.add('hidden');
+            document.getElementById('no-match').classList.add('hidden');
+        }
+
+        function learn() {
+            startCamera('learn');
+        }
+
+        function scan() {
+            if (objects.length === 0) {
+                alert('Prima impara un oggetto!');
+                return;
+            }
+            startCamera('scan');
+        }
+
+        function startLearning() {
+            learning = true;
+            data = [];
+            progress = 0;
+            
+            document.getElementById('icon').style.display = 'none';
+            document.getElementById('spinner').classList.remove('hidden');
+            document.getElementById('learning').classList.remove('hidden');
+            
+            interval = setInterval(() => {
+                const features = getFeatures();
+                if (features) {
+                    data.push(features);
+                    progress = Math.min((data.length / 15) * 100, 100);
+                    
+                    document.getElementById('progress-bar').style.width = progress + '%';
+                    document.getElementById('progress-text').textContent = `Progresso: ${Math.floor(progress)}%`;
+                    
+                    if (data.length >= 15) {
+                        setTimeout(finishLearning, 1000);
+                    }
+                }
+            }, 300);
+        }
+
+        function finishLearning() {
+            if (data.length === 0) return;
+            
+            clearInterval(interval);
+            
+            const avg = {
+                r: Math.floor(data.reduce((s, d) => s + d.r, 0) / data.length),
+                g: Math.floor(data.reduce((s, d) => s + d.g, 0) / data.length),
+                b: Math.floor(data.reduce((s, d) => s + d.b, 0) / data.length)
+            };
+            
+            const brightness = data.reduce((s, d) => s + d.brightness, 0) / data.length;
+            const dominant = avg.r > avg.g && avg.r > avg.b ? 'red' : avg.g > avg.b ? 'green' : 'blue';
+            
+            const colorName = { red: 'Rosso', green: 'Verde', blue: 'Blu' }[dominant];
+            const type = brightness > 150 ? 'Chiaro' : 'Scuro';
+            const name = `Oggetto ${colorName} ${type}`;
+            
+            const obj = {
+                id: Date.now().toString(),
+                name: name,
+                profile: { color: avg, brightness: brightness, dominant: dominant },
+                links: [],
+                created: new Date().toISOString()
+            };
+            
+            objects.push(obj);
+            stop();
+            alert(`Oggetto appreso: ${name}`);
+        }
+
+        function startRecognition() {
+            interval = setInterval(() => {
+                const features = getFeatures();
+                if (!features) return;
+                
+                let best = null;
+                let bestScore = 0;
+                
+                objects.forEach(obj => {
+                    const colorDist = Math.sqrt(
+                        Math.pow(features.r - obj.profile.color.r, 2) +
+                        Math.pow(features.g - obj.profile.color.g, 2) +
+                        Math.pow(features.b - obj.profile.color.b, 2)
+                    );
+                    
+                    const colorSim = (1 - colorDist / 441) * 100;
+                    const brightSim = Math.max(0, (1 - Math.abs(features.brightness - obj.profile.brightness) / 255) * 100);
+                    const channelBonus = features.dominant === obj.profile.dominant ? 20 : 0;
+                    
+                    const score = colorSim * 0.5 + brightSim * 0.3 + channelBonus;
+                    
+                    if (score > bestScore && score > 65) {
+                        best = obj;
+                        bestScore = score;
+                    }
+                });
+                
+                hideOverlays();
+                
+                if (best && bestScore > 65) {
+                    document.getElementById('obj-name').textContent = best.name;
+                    document.getElementById('confidence').textContent = `Confidenza: ${Math.floor(bestScore)}%`;
+                    document.getElementById('recognition').classList.remove('hidden');
+                    current = best;
+                } else if (bestScore > 0) {
+                    document.getElementById('warning').classList.remove('hidden');
+                } else {
+                    document.getElementById('no-match').classList.remove('hidden');
+                }
+            }, 500);
+        }
+
+        function getFeatures() {
+            const video = document.getElementById('video');
+            if (!video || video.videoWidth === 0) return null;
+            
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            ctx.drawImage(video, 0, 0);
+            
+            const data = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+            let r = 0, g = 0, b = 0, count = 0;
+            
+            for (let i = 0; i < data.length; i += 4000) {
+                r += data[i];
+                g += data[i + 1];
+                b += data[i + 2];
+                count++;
+            }
+            
+            r = Math.floor(r / count);
+            g = Math.floor(g / count);
+            b = Math.floor(b / count);
+            
+            return {
+                r: r, g: g, b: b,
+                brightness: (r + g + b) / 3,
+                dominant: r > g && r > b ? 'red' : g > b ? 'green' : 'blue'
+            };
+        }
+
+        function confirm() {
+            if (!current) return;
+            
+            if (pending) {
+                const idx = objects.findIndex(o => o.id === current.id);
+                if (idx !== -1) {
+                    objects[idx].links.push(pending);
+                }
+                pending = null;
+                alert(`Contenuto associato a ${current.name}`);
+            } else {
+                showDetail(current.id);
+            }
+            
+            stop();
+        }
+
+        function share() {
+            document.getElementById('modal').classList.add('show');
+        }
+
+        function hideModal() {
+            document.getElementById('modal').classList.remove('show');
+        }
+
+        function addContent(type) {
+            const titles = {
+                image: 'Foto condivisa',
+                document: 'Documento PDF', 
+                link: 'Link condiviso',
+                video: 'Video condiviso'
+            };
+            
+            pending = {
+                id: Date.now().toString(),
+                type: type,
+                title: titles[type],
+                created: new Date().toISOString()
+            };
+            
+            hideModal();
+            updateUI();
+            
+            if (objects.length === 0) {
+                alert('Prima impara un oggetto!');
+            }
+        }
+
+        function showDetail(id) {
+            const obj = objects.find(o => o.id === id);
+            if (!obj) return;
+            
+            document.getElementById('main').classList.add('hidden');
+            document.getElementById('detail').classList.remove('hidden');
+            
+            document.getElementById('detail-name').textContent = obj.name;
+            document.getElementById('detail-count').textContent = obj.links.length;
+            document.getElementById('detail-created').textContent = new Date(obj.created).toLocaleDateString('it-IT');
+            
+            const links = document.getElementById('detail-links');
+            if (obj.links.length === 0) {
+                links.innerHTML = '<div class="empty">Nessun contenuto associato.</div>';
+            } else {
+                const icons = { image: '📷', document: '📄', link: '🔗', video: '🎥' };
+                links.innerHTML = obj.links.map(link => 
+                    `<div style="background: #dbeafe; border-radius: 8px; padding: 12px; margin-bottom: 8px; display: flex; align-items: center; gap: 12px;">
+                        <span>${icons[link.type]}</span>
+                        <div>
+                            <div style="font-weight: 500; font-size: 14px;">${link.title}</div>
+                            <div style="color: #6b7280; font-size: 12px;">${new Date(link.created).toLocaleDateString('it-IT')}</div>
+                        </div>
+                    </div>`
+                ).join('');
+            }
+        }
+
+        function showMain() {
+            document.getElementById('detail').classList.add('hidden');
+            document.getElementById('main').classList.remove('hidden');
+        }
+
+        updateUI();
+    </script>
+</body>
+</html>

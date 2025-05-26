@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Camera Test</title>
+    <style>
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, sans-serif; 
+            padding: 20px;
+            background: #f0f0f0;
+        }
+        .container {
+            max-width: 400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+        }
+        .btn {
+            width: 100%;
+            padding: 16px;
+            font-size: 16px;
+            border: none;
+            border-radius: 8px;
+            background: #007AFF;
+            color: white;
+            cursor: pointer;
+            margin-bottom: 12px;
+        }
+        .btn:hover {
+            background: #0056CC;
+        }
+        .btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        .status {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            padding: 12px;
+            margin: 12px 0;
+            font-family: monospace;
+            font-size: 14px;
+            white-space: pre-wrap;
+        }
+        .video-container {
+            position: relative;
+            background: black;
+            border-radius: 8px;
+            overflow: hidden;
+            margin: 12px 0;
+            display: none;
+        }
+        .video-container.show {
+            display: block;
+        }
+        video {
+            width: 100%;
+            height: 250px;
+            object-fit: cover;
+        }
+        .close-btn {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: rgba(255,255,255,0.8);
+            border: none;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔍 Camera Debug Test</h1>
+        
+        <button class="btn" onclick="checkSupport()">1. Verifica Supporto Browser</button>
+        <button class="btn" onclick="listDevices()">2. Lista Dispositivi Disponibili</button>
+        <button class="btn" onclick="requestPermission()">3. Richiedi Permesso Camera</button>
+        <button class="btn" onclick="startSimpleCamera()" id="startBtn">4. Avvia Camera Semplice</button>
+        
+        <div class="status" id="status">Premi i pulsanti in ordine per diagnosticare il problema...</div>
+        
+        <div class="video-container" id="videoContainer">
+            <video id="video" autoplay playsinline muted></video>
+            <button class="close-btn" onclick="stopCamera()">✕</button>
+        </div>
+        
+        <div style="margin-top: 20px; padding: 16px; background: #fff3cd; border-radius: 8px; font-size: 14px;">
+            <h3>📋 Checklist iOS:</h3>
+            <ul>
+                <li>✅ Stai usando Safari iOS (preferito)</li>
+                <li>✅ URL inizia con HTTPS</li>
+                <li>✅ iOS versione 11+ </li>
+                <li>✅ Impostazioni → Safari → Camera → Consenti</li>
+                <li>✅ Nessun "Private Browsing" attivo</li>
+            </ul>
+        </div>
+    </div>
+
+    <script>
+        let stream = null;
+        
+        function log(message) {
+            const status = document.getElementById('status');
+            const timestamp = new Date().toLocaleTimeString();
+            status.textContent += `[${timestamp}] ${message}\n`;
+            console.log(message);
+        }
+        
+        function clearLog() {
+            document.getElementById('status').textContent = '';
+        }
+        
+        async function checkSupport() {
+            clearLog();
+            log('🔍 Verificando supporto browser...');
+            
+            // Check MediaDevices API
+            if (!navigator.mediaDevices) {
+                log('❌ navigator.mediaDevices NON supportato');
+                log('💡 Prova Safari invece di Chrome su iOS');
+                return;
+            }
+            log('✅ navigator.mediaDevices supportato');
+            
+            // Check getUserMedia
+            if (!navigator.mediaDevices.getUserMedia) {
+                log('❌ getUserMedia NON supportato');
+                return;
+            }
+            log('✅ getUserMedia supportato');
+            
+            // Check HTTPS
+            if (location.protocol !== 'https:' && location.hostname !== 'localhost') {
+                log('❌ HTTPS richiesto per camera access');
+                log('💡 Assicurati che l\'URL inizi con https://');
+                return;
+            }
+            log('✅ Connessione sicura (HTTPS)');
+            
+            // Check user agent
+            log(`📱 User Agent: ${navigator.userAgent}`);
+            
+            if (/iPhone|iPad/.test(navigator.userAgent)) {
+                log('✅ Dispositivo iOS rilevato');
+            } else {
+                log('⚠️ Non sembra un dispositivo iOS');
+            }
+            
+            log('✅ Tutti i controlli base superati!');
+        }
+        
+        async function listDevices() {
+            clearLog();
+            log('📹 Elencando dispositivi media...');
+            
+            try {
+                const devices = await navigator.mediaDevices.enumerateDevices();
+                log(`📱 Trovati ${devices.length} dispositivi:`);
+                
+                devices.forEach((device, index) => {
+                    log(`${index + 1}. ${device.kind}: ${device.label || 'Dispositivo senza nome'}`);
+                });
+                
+                const videoDevices = devices.filter(d => d.kind === 'videoinput');
+                log(`🎥 Fotocamere disponibili: ${videoDevices.length}`);
+                
+                if (videoDevices.length === 0) {
+                    log('❌ Nessuna fotocamera trovata!');
+                } else {
+                    log('✅ Fotocamere rilevate correttamente');
+                }
+                
+            } catch (error) {
+                log(`❌ Errore nell'elencare dispositivi: ${error.message}`);
+            }
+        }
+        
+        async function requestPermission() {
+            clearLog();
+            log('🔐 Richiedendo permesso camera...');
+            
+            try {
+                // Request basic camera permission
+                const stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: true, 
+                    audio: false 
+                });
+                
+                log('✅ Permesso camera ottenuto!');
+                log(`📹 Stream attivo: ${stream.active}`);
+                log(`🎥 Video tracks: ${stream.getVideoTracks().length}`);
+                
+                // Stop the stream immediately (just testing permission)
+                stream.getTracks().forEach(track => {
+                    track.stop();
+                    log(`⏹️ Track fermato: ${track.kind}`);
+                });
+                
+                log('✅ Test permessi completato con successo!');
+                
+            } catch (error) {
+                log(`❌ Errore permesso: ${error.name} - ${error.message}`);
+                
+                if (error.name === 'NotAllowedError') {
+                    log('💡 L\'utente ha negato il permesso alla camera');
+                    log('💡 Controlla impostazioni browser per questo sito');
+                } else if (error.name === 'NotFoundError') {
+                    log('💡 Nessuna camera trovata sul dispositivo');
+                } else if (error.name === 'NotSupportedError') {
+                    log('💡 Camera non supportata in questo browser');
+                } else {
+                    log('💡 Errore sconosciuto - prova a ricaricare la pagina');
+                }
+            }
+        }
+        
+        async function startSimpleCamera() {
+            clearLog();
+            log('🎬 Avviando camera semplice...');
+            
+            try {
+                stream = await navigator.mediaDevices.getUserMedia({
+                    video: {
+                        facingMode: 'environment', // Back camera
+                        width: { ideal: 640 },
+                        height: { ideal: 480 }
+                    },
+                    audio: false
+                });
+                
+                log('✅ Stream camera ottenuto!');
+                
+                const video = document.getElementById('video');
+                video.srcObject = stream;
+                
+                video.onloadedmetadata = () => {
+                    log(`📹 Video caricato: ${video.videoWidth}x${video.videoHeight}`);
+                    document.getElementById('videoContainer').classList.add('show');
+                    log('✅ Camera attiva e visibile!');
+                };
+                
+                video.onerror = (e) => {
+                    log(`❌ Errore video: ${e.message}`);
+                };
+                
+            } catch (error) {
+                log(`❌ Errore avvio camera: ${error.name} - ${error.message}`);
+                
+                // Detailed error analysis
+                if (error.name === 'NotAllowedError') {
+                    log('🚫 Permesso negato - vai nelle impostazioni browser');
+                } else if (error.name === 'NotFoundError') {
+                    log('📷 Camera non trovata');
+                } else if (error.name === 'OverconstrainedError') {
+                    log('⚙️ Impostazioni camera non supportate');
+                    log('💡 Provo con impostazioni più semplici...');
+                    
+                    // Try simpler settings
+                    trySimpleSettings();
+                }
+            }
+        }
+        
+        async function trySimpleSettings() {
+            try {
+                log('🔄 Tentativo con impostazioni base...');
+                
+                stream = await navigator.mediaDevices.getUserMedia({
+                    video: true  // Just basic video, no constraints
+                });
+                
+                log('✅ Camera avviata con impostazioni semplici!');
+                
+                const video = document.getElementById('video');
+                video.srcObject = stream;
+                document.getElementById('videoContainer').classList.add('show');
+                
+            } catch (error) {
+                log(`❌ Anche impostazioni semplici fallite: ${error.message}`);
+            }
+        }
+        
+        function stopCamera() {
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+                stream = null;
+                log('⏹️ Camera fermata');
+            }
+            
+            document.getElementById('videoContainer').classList.remove('show');
+            const video = document.getElementById('video');
+            video.srcObject = null;
+        }
+        
+        // Auto-check on load
+        window.onload = () => {
+            log('🚀 Pagina caricata - premi "1. Verifica Supporto Browser" per iniziare');
+        };
+    </script>
+</body>
+</html>

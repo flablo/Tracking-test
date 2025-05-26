@@ -13,8 +13,11 @@
         .header p { opacity: 0.9; font-size: 14px; }
         .camera { position: relative; background: black; display: none; }
         .camera video { width: 100%; height: 300px; object-fit: cover; }
+        .camera canvas { position: absolute; top: 0; left: 0; width: 100%; height: 300px; pointer-events: none; opacity: 0.7; }
         .overlay { position: absolute; top: 0; left: 0; right: 0; bottom: 0; display: flex; align-items: center; justify-content: center; }
-        .frame { border: 2px dashed white; width: 200px; height: 120px; border-radius: 8px; display: flex; align-items: center; justify-content: center; }
+        .frame { border: 2px dashed white; width: 200px; height: 120px; border-radius: 8px; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+        .visual-feedback { background: rgba(0,0,0,0.7); color: white; padding: 8px 12px; border-radius: 20px; font-size: 12px; margin-top: 8px; text-align: center; min-height: 20px; }
+        .color-preview { width: 20px; height: 20px; border-radius: 50%; margin: 0 auto 4px; border: 2px solid white; }
         .result { position: absolute; bottom: 16px; left: 16px; right: 16px; padding: 16px; border-radius: 8px; color: white; display: flex; justify-content: space-between; align-items: center; }
         .success { background: #10b981; }
         .warning { background: #f59e0b; }
@@ -53,10 +56,15 @@
 
         <div class="camera hidden" id="camera">
             <video id="video" autoplay playsinline></video>
+            <canvas id="overlay-canvas" width="400" height="300"></canvas>
             <div class="overlay">
                 <div class="frame">
                     <span id="icon">📷</span>
                     <div id="spinner" class="spinner hidden"></div>
+                    <div class="visual-feedback" id="feedback">
+                        <div class="color-preview" id="color-preview"></div>
+                        <div id="analysis-text">Analizzando...</div>
+                    </div>
                 </div>
             </div>
             
@@ -351,6 +359,9 @@
             canvas.height = video.videoHeight;
             ctx.drawImage(video, 0, 0);
             
+            // Update visual overlay
+            updateVisualOverlay(canvas, ctx);
+            
             const data = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
             let r = 0, g = 0, b = 0, count = 0;
             
@@ -365,11 +376,91 @@
             g = Math.floor(g / count);
             b = Math.floor(b / count);
             
+            // Update feedback display
+            updateFeedback(r, g, b);
+            
             return {
                 r: r, g: g, b: b,
                 brightness: (r + g + b) / 3,
                 dominant: r > g && r > b ? 'red' : g > b ? 'green' : 'blue'
             };
+        }
+
+        function updateVisualOverlay(sourceCanvas, sourceCtx) {
+            const overlayCanvas = document.getElementById('overlay-canvas');
+            const overlayCtx = overlayCanvas.getContext('2d');
+            
+            // Clear previous overlay
+            overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+            
+            // Get video dimensions
+            const video = document.getElementById('video');
+            const scaleX = overlayCanvas.width / sourceCanvas.width;
+            const scaleY = overlayCanvas.height / sourceCanvas.height;
+            
+            // Edge detection overlay
+            const imageData = sourceCtx.getImageData(0, 0, sourceCanvas.width, sourceCanvas.height);
+            const data = imageData.data;
+            
+            overlayCtx.strokeStyle = '#00ff00';
+            overlayCtx.lineWidth = 2;
+            
+            const step = 20;
+            for (let y = 0; y < sourceCanvas.height - step; y += step) {
+                for (let x = 0; x < sourceCanvas.width - step; x += step) {
+                    const idx1 = (y * sourceCanvas.width + x) * 4;
+                    const idx2 = (y * sourceCanvas.width + (x + step)) * 4;
+                    
+                    const diff = Math.abs(data[idx1] - data[idx2]) + 
+                                Math.abs(data[idx1 + 1] - data[idx2 + 1]) + 
+                                Math.abs(data[idx1 + 2] - data[idx2 + 2]);
+                    
+                    if (diff > 60) {
+                        overlayCtx.beginPath();
+                        overlayCtx.arc(x * scaleX, y * scaleY, 3, 0, 2 * Math.PI);
+                        overlayCtx.stroke();
+                    }
+                }
+            }
+            
+            // Color regions overlay
+            overlayCtx.fillStyle = 'rgba(255, 255, 0, 0.3)';
+            const centerX = sourceCanvas.width / 2;
+            const centerY = sourceCanvas.height / 2;
+            const regionSize = 80;
+            
+            overlayCtx.fillRect(
+                (centerX - regionSize/2) * scaleX, 
+                (centerY - regionSize/2) * scaleY, 
+                regionSize * scaleX, 
+                regionSize * scaleY
+            );
+            
+            overlayCtx.strokeStyle = '#ffff00';
+            overlayCtx.lineWidth = 2;
+            overlayCtx.strokeRect(
+                (centerX - regionSize/2) * scaleX, 
+                (centerY - regionSize/2) * scaleY, 
+                regionSize * scaleX, 
+                regionSize * scaleY
+            );
+        }
+
+        function updateFeedback(r, g, b) {
+            const colorPreview = document.getElementById('color-preview');
+            const analysisText = document.getElementById('analysis-text');
+            
+            colorPreview.style.backgroundColor = `rgb(${r}, ${g}, ${b})`;
+            
+            const brightness = (r + g + b) / 3;
+            const dominant = r > g && r > b ? 'Rosso' : g > b ? 'Verde' : 'Blu';
+            const lightness = brightness > 150 ? 'Chiaro' : 'Scuro';
+            
+            analysisText.innerHTML = `
+                <div style="font-weight: bold;">${dominant} ${lightness}</div>
+                <div style="font-size: 10px;">RGB(${r}, ${g}, ${b})</div>
+                <div style="font-size: 10px;">Luminosità: ${Math.floor(brightness)}</div>
+            `;
         }
 
         function confirm() {
